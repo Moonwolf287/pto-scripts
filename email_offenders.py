@@ -10,6 +10,11 @@ import sys
 DOMAINS_FILENAME = '../plaintextoffenders/offenders.csv'
 # Emailed domains filename. Assumes each line contains a single domain.
 EMAILED_DOMAINS_FILENAME = 'offenders_emailed.txt'
+# Domains where the email does not fit the given domain. These need to be contacted manually.
+FAILED_FILENAME = 'failed_emails.txt'
+# Domains where the email could not be found. These need to be contacted manually.
+NOTFOUND_FILENAME = 'notfound_domains.txt'
+
 # Limit number of domains to process.
 LIMIT = 100
 
@@ -35,14 +40,14 @@ Plain-Text Offenders'''
 def process_domain(domain, post_url):
     try:
         whois_response = whois.whois(domain)
-        if 'emails' in whois_response:
-            emails = whois_response['emails']
-            if emails:
-                email(emails, domain, post_url)
+        if 'emails' in whois_response and whois_response['emails']:
+            filtered_emails = [email for email in emails if email_to_domain(email) == domain]
+            if filtered_emails:
+                email(filtered_emails, domain, post_url)
             else:
-                print 'No emails found for ' + domain
+                write_to_faile(domain, emails)
         else:
-            print 'No emails found for ' + domain
+            write_to_failed(domain)
     except:
         print "Error processing domain:", sys.exc_info()[0]
 
@@ -60,6 +65,23 @@ def email(emails, domain, post_url):
         print 'Successfully sent email to ' + recipient
         write_domain(domain)
 
+def email_to_domain(email):
+    return email.split('@')[-1]
+
+def write_to_failed(domain):
+     with open(NOTFOUND_FILENAME) as f:
+            f.write(domain)
+            print 'No emails found for ' + domain
+
+def write_to_failed(domain, emails):
+    if emails:  
+        with open(FAILED_FILENAME) as f:
+            email_str = ",".join(emails)
+            f.write(domain + '=' + email_str + '\n')
+        print 'Wrong email(s) found for ' + domain
+    else:
+        write_to_failed(domain)
+
 def write_domain(domain):
     with open(EMAILED_DOMAINS_FILENAME, 'a') as f:
         f.write(domain + '\n')
@@ -67,11 +89,12 @@ def write_domain(domain):
 if __name__ == '__main__':
     existing_domains = list(reversed([l.strip().split(',') for l in open(DOMAINS_FILENAME).readlines()]))
     emailed_domains = set([l.strip() for l in open(EMAILED_DOMAINS_FILENAME).readlines()])
+    failed_domains = list(l.strip().split('=') for l in open(FAILED_FILENAME).readlines())
 
     for existing_domain in existing_domains[0:LIMIT]:
         domain = existing_domain[0]
         post_url = existing_domain[1]
-        if domain not in emailed_domains:
+        if domain not in emailed_domains and domain not in failed_domains:
             print 'Processing ' + domain
             process_domain(domain, post_url)
             print
